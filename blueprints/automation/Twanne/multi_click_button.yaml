@@ -1,0 +1,74 @@
+blueprint:
+  name: Multi Click Button
+  author: AntonH
+  description: "**Version 1.2**\nAllows multi-click actions to take place on a button.\nUpon
+    reaching the number of required clicks, it executes user defined actions.\n\nThere
+    are 3 entity types supported:\n  - button\n  - input_button\n  - switch\n\n**NOTE:**
+    *Every state change is counted as a click. Therefore, in switch entity types,
+    both turning it on or off is counted as a 'click'.*\n"
+  source_url: https://gist.github.com/Twanne/c928236ab8fc98f34151d5e097f78890
+  domain: automation
+  input:
+    button_entity:
+      name: Button entity
+      description: "The button you want to use.\n**Supported entity types:**\n  -
+        button\n  - input_button\n  - switch\n"
+      default: []
+      selector:
+        entity:
+          domain:
+          - button
+          - input_button
+          - switch
+          multiple: false
+    number_of_clicks:
+      name: How many clicks?
+      description: How many clicks before the action is executed.
+      default: 2
+      selector:
+        number:
+          min: 1.0
+          max: 100.0
+          step: 1.0
+          unit_of_measurement: clicks
+          mode: slider
+    time_between_clicks:
+      name: Time between clicks
+      description: How much time is allowed between any 2 clicks?
+      default: []
+      selector:
+        duration:
+          enable_millisecond: true
+    action_conditions:
+      name: Action condition
+      description: These conditions need to be met before the actions are executed.
+      default: []
+      selector:
+        condition: {}
+    actions:
+      name: Actions
+      description: Which actions to execute when the button has been pressed the set
+        number of times.
+      default: []
+      selector:
+        action: {}
+mode: single
+variables:
+  number_of_clicks: !input number_of_clicks
+  time_between_clicks: !input time_between_clicks
+triggers:
+- trigger: state
+  entity_id: !input button_entity
+actions:
+- repeat:
+    sequence:
+    - wait_for_trigger:
+      - trigger: state
+        entity_id: !input button_entity
+        to:
+      timeout: '{{ time_between_clicks }}'
+      continue_on_timeout: false
+    count: '{{ (number_of_clicks | int ) - 1 }}'
+- choose:
+  - conditions: !input action_conditions
+    sequence: !input actions

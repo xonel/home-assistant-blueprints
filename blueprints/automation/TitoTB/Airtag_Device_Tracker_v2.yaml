@@ -1,0 +1,32 @@
+blueprint:
+  name: "\U0001F4CD AirTag Device Tracker v2"
+  description: This blueprint allows you to turn your AirTag into a Device Tracker.
+  source_url: https://gist.github.com/TitoTB/a4625072f34a9d50c3951075fde5a26d
+  domain: automation
+  input:
+    airtag:
+      name: Airtag
+      description: Select the sensor you have created for your AirTag
+      selector:
+        entity:
+          domain:
+          - sensor
+          multiple: false
+trigger:
+- platform: state
+  entity_id: !input airtag
+- platform: homeassistant
+  event: start
+condition: []
+action:
+- variables:
+    airtag: !input airtag
+- service: device_tracker.see
+  data:
+    dev_id: '{{ state_attr(airtag, ''friendly_name'') | slugify }}'
+    location_name: "{% if states(airtag) == \"Home\" %}\n  home\n{% else %}\n  not_home\n{%
+      endif %}\n"
+    gps:
+    - '{{ state_attr(airtag, ''latitude'') }}'
+    - '{{ state_attr(airtag, ''longitude'') }}'
+mode: single

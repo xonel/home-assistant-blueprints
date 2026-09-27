@@ -1,0 +1,171 @@
+blueprint:
+  name: "IKEA RODRET - Variateur sur interrupteurs (ZHA)"
+  description: |
+    Pilote des interrupteurs Sonoff avec la télécommande IKEA RODRET appairée
+    en ZHA.
+
+    - Appui court haut : exécute une séquence d'actions libre
+    - Appui court bas : exécute une séquence d'actions libre
+    - Double appui haut : exécute une séquence d'actions libre
+    - Double appui bas : exécute une séquence d'actions libre
+    - Maintien haut / bas : exécute une séquence d'actions libre, une seule
+      fois (pas de boucle, pas de clignotement)
+
+    Basé sur la méthode zha_event brute validée sur cette installation (pas de
+    device triggers pour RODRET). Le double appui est détecté par
+    wait_for_trigger avec fenêtre de 400 ms. Toujours quoter command: 'on'/'off'.
+  domain: automation
+  input:
+    rodret_device:
+      name: "Télécommande RODRET"
+      description: "La télécommande IKEA RODRET (ZHA)"
+      selector:
+        device:
+          filter:
+            - integration: zha
+              manufacturer: IKEA of Sweden
+          multiple: false
+    simple_press_up_actions:
+      name: "Actions - appui court haut"
+      description: "Séquence d'actions exécutée une fois sur appui court du bouton haut (échec du double appui)"
+      default: []
+      selector:
+        action:
+    simple_press_down_actions:
+      name: "Actions - appui court bas"
+      description: "Séquence d'actions exécutée une fois sur appui court du bouton bas (échec du double appui)"
+      default: []
+      selector:
+        action:
+    double_press_up_actions:
+      name: "Actions - double appui haut"
+      description: "Séquence d'actions exécutée sur double appui haut (vide : repli sur l'appui court haut)"
+      default: []
+      selector:
+        action:
+    double_press_down_actions:
+      name: "Actions - double appui bas"
+      description: "Séquence d'actions exécutée sur double appui bas (vide : repli sur l'appui court bas)"
+      default: []
+      selector:
+        action:
+    hold_up_actions:
+      name: "Actions - maintien haut"
+      description: "Séquence d'actions exécutée une fois au maintien du bouton haut"
+      default: []
+      selector:
+        action:
+    hold_down_actions:
+      name: "Actions - maintien bas"
+      description: "Séquence d'actions exécutée une fois au maintien du bouton bas"
+      default: []
+      selector:
+        action:
+    double_click_window:
+      name: "Fenêtre double appui (ms)"
+      description: "Délai max entre les deux appuis pour compter comme double appui"
+      default: 400
+      selector:
+        number:
+          min: 200
+          max: 1500
+          mode: slider
+          unit_of_measurement: "ms"
+
+triggers:
+  - trigger: event
+    event_type: zha_event
+    id: appui_court_haut
+    event_data:
+      device_id: !input rodret_device
+      command: "on"
+  - trigger: event
+    event_type: zha_event
+    id: appui_court_bas
+    event_data:
+      device_id: !input rodret_device
+      command: "off"
+  - trigger: event
+    event_type: zha_event
+    id: maintien_haut
+    event_data:
+      device_id: !input rodret_device
+      command: move_with_on_off
+  - trigger: event
+    event_type: zha_event
+    id: maintien_bas
+    event_data:
+      device_id: !input rodret_device
+      command: move
+
+conditions: []
+
+actions:
+  - variables:
+      simple_up_actions: !input simple_press_up_actions
+      simple_down_actions: !input simple_press_down_actions
+      double_up_actions: !input double_press_up_actions
+      double_down_actions: !input double_press_down_actions
+      double_ms: !input double_click_window
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: appui_court_haut
+        sequence:
+          - wait_for_trigger:
+              - trigger: event
+                event_type: zha_event
+                event_data:
+                  device_id: !input rodret_device
+                  command: "on"
+            timeout:
+              milliseconds: "{{ double_ms }}"
+          - if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none }}"
+            then:
+              - if:
+                  - condition: template
+                    value_template: "{{ double_up_actions | length > 0 }}"
+                then:
+                  - sequence: !input double_press_up_actions
+                else:
+                  - sequence: !input simple_press_up_actions
+            else:
+              - sequence: !input simple_press_up_actions
+      - conditions:
+          - condition: trigger
+            id: appui_court_bas
+        sequence:
+          - wait_for_trigger:
+              - trigger: event
+                event_type: zha_event
+                event_data:
+                  device_id: !input rodret_device
+                  command: "off"
+            timeout:
+              milliseconds: "{{ double_ms }}"
+          - if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none }}"
+            then:
+              - if:
+                  - condition: template
+                    value_template: "{{ double_down_actions | length > 0 }}"
+                then:
+                  - sequence: !input double_press_down_actions
+                else:
+                  - sequence: !input simple_press_down_actions
+            else:
+              - sequence: !input simple_press_down_actions
+      - conditions:
+          - condition: trigger
+            id: maintien_haut
+        sequence: !input hold_up_actions
+      - conditions:
+          - condition: trigger
+            id: maintien_bas
+        sequence: !input hold_down_actions
+
+mode: single
+max_exceeded: silent

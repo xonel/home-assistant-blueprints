@@ -1,0 +1,86 @@
+blueprint:
+  name: IKEA BILRESA - Final Manual Speed
+  description: Exact replica of manual automation speed. Cures the 'Missing input'
+    error.
+  domain: automation
+  input:
+    bilresa_device:
+      name: BILRESA Remote
+      selector:
+        device:
+          multiple: false
+    scene1_light:
+      name: Scene 1 Light
+      selector:
+        target:
+          entity:
+          - domain:
+            - light
+    scene2_light:
+      name: Scene 2 Light
+      selector:
+        target:
+          entity:
+          - domain:
+            - light
+    scene3_light:
+      name: Scene 3 Light
+      selector:
+        target:
+          entity:
+          - domain:
+            - light
+  source_url: https://gist.github.com/PaulHibbertMasterOfTheUniverse/d7b28f9a8cdddd41acd42e62264f5a86
+mode: restart
+max_exceeded: silent
+trigger:
+- platform: state
+  entity_id:
+  - event.bilresa_scroll_wheel_button_1
+  - event.bilresa_scroll_wheel_button_2
+  - event.bilresa_scroll_wheel_button_3
+  - event.bilresa_scroll_wheel_button_4
+  - event.bilresa_scroll_wheel_button_5
+  - event.bilresa_scroll_wheel_button_6
+  - event.bilresa_scroll_wheel_button_7
+  - event.bilresa_scroll_wheel_button_8
+  - event.bilresa_scroll_wheel_button_9
+action:
+- variables:
+    s1: !input scene1_light
+    s2: !input scene2_light
+    s3: !input scene3_light
+    is_right: '{{ ''button_1'' in trigger.entity_id or ''button_4'' in trigger.entity_id
+      or ''button_7'' in trigger.entity_id }}'
+    is_toggle: '{{ ''button_3'' in trigger.entity_id or ''button_6'' in trigger.entity_id
+      or ''button_9'' in trigger.entity_id }}'
+    clicks: '{{ trigger.to_state.attributes.totalNumberOfPressesCounted | default(1)
+      | int }}'
+- choose:
+  - conditions: '{{ ''button_1'' in trigger.entity_id or ''button_2'' in trigger.entity_id
+      or ''button_3'' in trigger.entity_id }}'
+    sequence:
+    - action: '{% if is_toggle %} light.toggle {% else %} light.turn_on {% endif %}'
+      target: '{{ s1 }}'
+      data: "{% if not is_toggle %}\n  {% if clicks >= 4 %} {{ {'brightness_pct':
+        80 if is_right else 13} }}\n  {% else %}\n    {% set scale = {1: 5, 2: 15,
+        3: 22} %}\n    {{ {'brightness_step_pct': scale.get(clicks, 5) * (1 if is_right
+        else -1)} }}\n  {% endif %}\n{% else %} {} {% endif %}\n"
+  - conditions: '{{ ''button_4'' in trigger.entity_id or ''button_5'' in trigger.entity_id
+      or ''button_6'' in trigger.entity_id }}'
+    sequence:
+    - action: '{% if is_toggle %} light.toggle {% else %} light.turn_on {% endif %}'
+      target: '{{ s2 }}'
+      data: "{% if not is_toggle %}\n  {% if clicks >= 4 %} {{ {'brightness_pct':
+        80 if is_right else 13} }}\n  {% else %}\n    {% set scale = {1: 5, 2: 15,
+        3: 22} %}\n    {{ {'brightness_step_pct': scale.get(clicks, 5) * (1 if is_right
+        else -1)} }}\n  {% endif %}\n{% else %} {} {% endif %}\n"
+  - conditions: '{{ ''button_7'' in trigger.entity_id or ''button_8'' in trigger.entity_id
+      or ''button_9'' in trigger.entity_id }}'
+    sequence:
+    - action: '{% if is_toggle %} light.toggle {% else %} light.turn_on {% endif %}'
+      target: '{{ s3 }}'
+      data: "{% if not is_toggle %}\n  {% if clicks >= 4 %} {{ {'brightness_pct':
+        80 if is_right else 13} }}\n  {% else %}\n    {% set scale = {1: 5, 2: 15,
+        3: 22} %}\n    {{ {'brightness_step_pct': scale.get(clicks, 5) * (1 if is_right
+        else -1)} }}\n  {% endif %}\n{% else %} {} {% endif %}"
