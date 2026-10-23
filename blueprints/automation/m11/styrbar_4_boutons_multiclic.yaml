@@ -1,0 +1,197 @@
+blueprint:
+  name: IKEA STYRBAR (E2001/E2002) - 4 boutons, simple / double / triple clic (ZHA)
+  description: >-
+    Pilote 4 groupes d'entités avec la télécommande IKEA STYRBAR (ZHA, "Remote Control N2").
+
+
+    Boutons : H (haut), B (bas), G (gauche), D (droite). D agit sur l'union de H, B et G.
+
+
+    Clic simple : allume à 100 % (si tout est éteint) ou éteint (si au moins une entité est allumée).
+
+    Double clic : allume à X % (lumières dimmables ; les switchs sont simplement allumés) ou éteint.
+
+    Triple clic : éteint le groupe du bouton.
+
+
+    Les doubles/triples clics sont comptés par logiciel (la télécommande n'envoie qu'une commande par clic).
+    Le `on` parasite envoyé lors d'un appui long sur G/D est ignoré (détection du `recall`).
+    Un clic simple est donc exécuté après la fenêtre de comptage.
+
+
+    Testé le 2026-10-23 sur M11 : H = on (cluster 6), B = off (cluster 6),
+    G = press [257,13,0] et D = press [256,13,0] (cluster 5).
+  domain: automation
+  author: OpenCode / M11
+  input:
+    remote:
+      name: Télécommande STYRBAR
+      selector:
+        device:
+          integration: zha
+          manufacturer: IKEA of Sweden
+          model: Remote Control N2
+    group_h:
+      name: Bouton H (haut)
+      selector:
+        entity:
+          multiple: true
+          domain: [light, switch]
+      default: []
+    group_b:
+      name: Bouton B (bas)
+      selector:
+        entity:
+          multiple: true
+          domain: [light, switch]
+      default: []
+    group_g:
+      name: Bouton G (gauche)
+      selector:
+        entity:
+          multiple: true
+          domain: [light, switch]
+      default: []
+    dim_pct:
+      name: Luminosité du double clic (%)
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+      default: 30
+    click_window:
+      name: Fenêtre de comptage des clics (ms)
+      description: Délai max entre deux clics. 900 ms recommandé pour cette télécommande (écarts mesurés 330 à 700 ms).
+      selector:
+        number:
+          min: 400
+          max: 1500
+          step: 50
+          unit_of_measurement: ms
+      default: 900
+
+mode: single
+max_exceeded: silent
+
+variables:
+  ent_h: !input group_h
+  ent_b: !input group_b
+  ent_g: !input group_g
+  dim_pct: !input dim_pct
+  window: !input click_window
+
+triggers:
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+      cluster_id: 6
+      command: "on"
+    id: h
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+      cluster_id: 6
+      command: "off"
+    id: b
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+      cluster_id: 5
+      command: press
+    id: gd
+
+actions:
+  - variables:
+      btn: >-
+        {% if trigger.id == 'h' %}H{% elif trigger.id == 'b' %}B{% else %}{{ 'G' if trigger.event.data.args[0] == 257 else ('D' if trigger.event.data.args[0] == 256 else 'X') }}{% endif %}
+  - condition: template
+    value_template: "{{ btn != 'X' }}"
+
+  - wait_for_trigger: &wait
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          device_id: !input remote
+          cluster_id: 6
+          command: "on"
+        id: s_on
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          device_id: !input remote
+          cluster_id: 6
+          command: "off"
+        id: s_off
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          device_id: !input remote
+          cluster_id: 5
+          command: press
+        id: s_press
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          device_id: !input remote
+          cluster_id: 5
+          command: recall
+        id: s_recall
+    timeout: "{{ window / 1000 }}"
+    continue_on_timeout: true
+  - variables:
+      s1: >-
+        {% set t = wait.trigger %}{% if t is none %}none{% elif t.id == 's_recall' %}recall{% elif t.id == 's_on' %}H{% elif t.id == 's_off' %}B{% else %}{{ 'G' if t.event.data.args[0] == 257 else ('D' if t.event.data.args[0] == 256 else 'X') }}{% endif %}
+
+  - wait_for_trigger: *wait
+    timeout: "{{ (window / 1000) if s1 == btn else 0.05 }}"
+    continue_on_timeout: true
+  - variables:
+      s2: >-
+        {% set t = wait.trigger %}{% if t is none %}none{% elif t.id == 's_recall' %}recall{% elif t.id == 's_on' %}H{% elif t.id == 's_off' %}B{% else %}{{ 'G' if t.event.data.args[0] == 257 else ('D' if t.event.data.args[0] == 256 else 'X') }}{% endif %}
+      c2: "{{ s1 == btn }}"
+      c3: "{{ s1 == btn and s2 == btn }}"
+      aborted: "{{ s1 == 'recall' or (s1 == btn and s2 == 'recall') }}"
+      count: "{{ 3 if (s1 == btn and s2 == btn) else (2 if s1 == btn else 1) }}"
+
+  - condition: template
+    value_template: "{{ not aborted }}"
+
+  - variables:
+      group: >-
+        {% if btn == 'H' %}{{ ent_h }}{% elif btn == 'B' %}{{ ent_b }}{% elif btn == 'G' %}{{ ent_g }}{% else %}{{ (ent_h + ent_b + ent_g) | unique | list }}{% endif %}
+      lights: "{{ group | select('match', 'light[.]') | list }}"
+      others: "{{ group | reject('match', 'light[.]') | list }}"
+      any_on: "{{ expand(group) | selectattr('state', 'eq', 'on') | list | length > 0 }}"
+      pct: "{{ 100 if count == 1 else dim_pct | int }}"
+  - condition: template
+    value_template: "{{ group | length > 0 }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ count == 3 or any_on }}"
+        sequence:
+          - action: homeassistant.turn_off
+            target:
+              entity_id: "{{ group }}"
+    default:
+      - if:
+          - condition: template
+            value_template: "{{ lights | length > 0 }}"
+        then:
+          - action: light.turn_on
+            target:
+              entity_id: "{{ lights }}"
+            data:
+              brightness_pct: "{{ pct }}"
+      - if:
+          - condition: template
+            value_template: "{{ others | length > 0 }}"
+        then:
+          - action: homeassistant.turn_on
+            target:
+              entity_id: "{{ others }}"
